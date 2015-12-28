@@ -173,11 +173,11 @@ public class AllureRunListener extends RunListener {
         }
         return new String[]{"Feature: Undefined Feature", scenarioName};
     }
-    
+
     public void testSuiteStarted(Description description, String suiteName) throws IllegalAccessException {
 
         String[] annotationParams = findFeatureByScenarioName(suiteName);
-        
+
         //Create feature and story annotations. Remove unnecessary words from it
         Features feature = getFeaturesAnnotation(new String[]{annotationParams[0].split(":")[1].trim()});
         Stories story = getStoriesAnnotation(new String[]{annotationParams[1].split(":")[1].trim()});
@@ -193,7 +193,7 @@ public class AllureRunListener extends RunListener {
         TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, story.value()[0]);
 
         event.setTitle(story.value()[0]);
-        
+
         //Add feature and story annotations
         Collection<Annotation> annotations = new ArrayList<>();
         for (Annotation annotation : description.getAnnotations()) {
@@ -258,12 +258,12 @@ public class AllureRunListener extends RunListener {
             String methodName = extractMethodName(description);
             TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), methodName);
             event.setTitle(methodName);
-            
+
             Collection<Annotation> annotations = new ArrayList<>();
             for (Annotation annotation : description.getAnnotations()) {
                 annotations.add(annotation);
             }
-            
+
             AnnotationManager am = new AnnotationManager(annotations);
             am.update(event);
             getLifecycle().fire(event);
@@ -273,7 +273,7 @@ public class AllureRunListener extends RunListener {
     @Override
     public void testFailure(Failure failure) {
         // Produces additional failure step for all test case  
-        fireTestCaseFailure(failure.getException());
+//        fireTestCaseFailure(failure.getException());
 
     }
 
@@ -311,7 +311,7 @@ public class AllureRunListener extends RunListener {
     }
 
     public String getSuiteUid(Description description) throws IllegalAccessException {
-        String suiteName = description.getClassName();
+        String suiteName = extractClassName(description);
         if (!description.isSuite()) {
             suiteName = extractClassName(description);
         }
@@ -335,7 +335,7 @@ public class AllureRunListener extends RunListener {
     public void startFakeTestCase(Description description) throws IllegalAccessException {
         String uid = getSuiteUid(description);
 
-        String name = description.isTest() ? description.getMethodName() : description.getClassName();
+        String name = description.isTest() ? extractMethodName(description) : extractClassName(description);;
         TestCaseStartedEvent event = new TestCaseStartedEvent(uid, name);
         event.setTitle(name);
         AnnotationManager am = new AnnotationManager(description.getAnnotations());
@@ -379,12 +379,26 @@ public class AllureRunListener extends RunListener {
         if (matcher.find()) {
             return "|" + matcher.group(1) + "|";
         }
+        return getClassName(description);
+    }
+
+    private String getClassName(Description description) {
+        Pattern checkPurePattern = Pattern.compile("^([^(]*[:])");
+        Matcher matcherPure = checkPurePattern.matcher(description.getDisplayName());
+        if (matcherPure.find()) {
+            return description.getDisplayName();
+        }
+        Pattern pattern = Pattern.compile("\\((.*?)\\)$");
+        Matcher matcher = pattern.matcher(description.getDisplayName());
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
         return description.getClassName();
     }
 
     private String extractMethodName(Description description) {
         String displayName = description.getDisplayName();
-        Pattern pattern = Pattern.compile("^(.*)\\(\\|");
+        Pattern pattern = Pattern.compile("^(.*?)[!^\\(]");
         Matcher matcher = pattern.matcher(displayName);
         if (matcher.find()) {
             return matcher.group(1);
