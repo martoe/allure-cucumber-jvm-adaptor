@@ -3,6 +3,7 @@ package ru.yandex.qatools.allure.cucumberjvm;
 import gherkin.formatter.model.Feature;
 import gherkin.formatter.model.Scenario;
 import gherkin.formatter.model.ScenarioOutline;
+import java.io.Serializable;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -173,27 +174,76 @@ public class AllureRunListener extends RunListener {
         }
         return new String[]{"Feature: Undefined Feature", scenarioName};
     }
-    
+
+    private String[] findFeatureByDescription(Description desc) throws IllegalAccessException {
+        List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
+
+        for (Description testClass : testClasses) {
+
+            List<Description> features = findFeaturesLevel(testClass.getChildren());
+            //Feature cycle
+            for (Description feature : features) {
+                //Story cycle
+                for (Description story : feature.getChildren()) {
+                    Object scenarioType = getTestEntityType(story);
+
+                    //Scenario
+                    if (scenarioType instanceof Scenario) {
+                        for (Description child : story.getChildren()) {
+                            if (child.equals(desc)) {
+                                return new String[]{feature.getDisplayName(), story.getDisplayName()};
+                            }
+                        }
+//                        if (getSuites().containsKey(feature.getDisplayName()
+//                                + "=>" + story.getDisplayName() + "=>" + desc.getDisplayName())) {
+//                            continue;
+//                        }
+
+                        //Scenario Outline
+                    } else if (scenarioType instanceof ScenarioOutline) {
+                        List<Description> examples = story.getChildren().get(0).getChildren();
+                        // we need to go deeper :
+                        for (Description example : examples) {
+                            if (example.equals(desc) || example.getChildren().contains(desc)) {
+//                                if (getSuites().containsKey(feature.getDisplayName()
+//                                        + "=>" + story.getDisplayName() + "=>" + example.getDisplayName())) {
+//                                    continue;
+//                                }
+                                return new String[]{feature.getDisplayName(), story.getDisplayName()};
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return new String[]{"Feature: Undefined Feature", desc.getDisplayName()};
+    }
+
     public void testSuiteStarted(Description description, String suiteName) throws IllegalAccessException {
 
-        String[] annotationParams = findFeatureByScenarioName(suiteName);
-        
+//        String[] annotationParams = findFeatureByScenarioName(suiteName);
+        String[] annotationParams = findFeatureByDescription(description);
+
         //Create feature and story annotations. Remove unnecessary words from it
         Features feature = getFeaturesAnnotation(new String[]{annotationParams[0].split(":")[1].trim()});
-        Stories story = getStoriesAnnotation(new String[]{annotationParams[1].split(":")[1].trim()});
+        String storyText = annotationParams[1];
+        if (annotationParams[1].split(":").length > 1) {
+            storyText = annotationParams[1].split(":")[1].trim();
+        }
+        Stories story = getStoriesAnnotation(new String[]{storyText});
 
         //If it`s Scenario Outline, add example string to story name
-        if (description.getDisplayName().startsWith("|")
-                || description.getDisplayName().endsWith("|")) {
-            story = getStoriesAnnotation(new String[]{annotationParams[1].split(":")[1].trim()
-                + " " + description.getDisplayName()});
+        if (suiteName.startsWith("|")
+                || suiteName.endsWith("|")) {
+            story = getStoriesAnnotation(new String[]{storyText
+                + " " + suiteName});
         }
 
         String uid = generateSuiteUid(suiteName);
         TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, story.value()[0]);
 
         event.setTitle(story.value()[0]);
-        
+
         //Add feature and story annotations
         Collection<Annotation> annotations = new ArrayList<>();
         for (Annotation annotation : description.getAnnotations()) {
@@ -258,12 +308,12 @@ public class AllureRunListener extends RunListener {
             String methodName = extractMethodName(description);
             TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), methodName);
             event.setTitle(methodName);
-            
+
             Collection<Annotation> annotations = new ArrayList<>();
             for (Annotation annotation : description.getAnnotations()) {
                 annotations.add(annotation);
             }
-            
+
             AnnotationManager am = new AnnotationManager(annotations);
             am.update(event);
             getLifecycle().fire(event);
@@ -317,8 +367,8 @@ public class AllureRunListener extends RunListener {
         }
         if (!getSuites().containsKey(suiteName)) {
             //Fix NPE
-            Description suiteDescription = Description.createSuiteDescription(suiteName);
-            testSuiteStarted(suiteDescription, suiteName);
+//            Description suiteDescription = Description.createSuiteDescription(suiteName, (Serializable) FieldUtils.readField(description, "fUniqueId", true));
+            testSuiteStarted(description, suiteName);
         }
         return getSuites().get(suiteName);
     }
