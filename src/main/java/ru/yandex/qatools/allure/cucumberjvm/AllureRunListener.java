@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,7 +41,7 @@ public class AllureRunListener extends RunListener {
 
     private Allure lifecycle = Allure.LIFECYCLE;
 
-    private final Map<String, String> suites = new HashMap<>();
+    private final Map<Object, String> suites = new HashMap<>();
 
     /**
      * All tests object
@@ -175,7 +176,7 @@ public class AllureRunListener extends RunListener {
         return new String[]{"Feature: Undefined Feature", scenarioName};
     }
 
-    private String[] findFeatureByDescription(Description desc) throws IllegalAccessException {
+    private Object[] findFeatureByDescription(Description desc) throws IllegalAccessException {
         List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
 
         for (Description testClass : testClasses) {
@@ -191,7 +192,7 @@ public class AllureRunListener extends RunListener {
                     if (scenarioType instanceof Scenario) {
                         for (Description child : story.getChildren()) {
                             if (child.equals(desc)) {
-                                return new String[]{feature.getDisplayName(), story.getDisplayName()};
+                                return new Object[]{feature.getDisplayName(), story.getDisplayName(), feature, story};
                             }
                         }
 //                        if (getSuites().containsKey(feature.getDisplayName()
@@ -209,26 +210,26 @@ public class AllureRunListener extends RunListener {
 //                                        + "=>" + story.getDisplayName() + "=>" + example.getDisplayName())) {
 //                                    continue;
 //                                }
-                                return new String[]{feature.getDisplayName(), story.getDisplayName()};
+                                return new Object[]{feature.getDisplayName(), story.getDisplayName(), feature, story};
                             }
                         }
                     }
                 }
             }
         }
-        return new String[]{"Feature: Undefined Feature", desc.getDisplayName()};
+        return new Object[]{"Feature: Undefined Feature", desc.getDisplayName(), null, desc};
     }
 
-    public void testSuiteStarted(Description description, String suiteName) throws IllegalAccessException {
+    public String testSuiteStarted(Description description, String suiteName) throws IllegalAccessException {
 
 //        String[] annotationParams = findFeatureByScenarioName(suiteName);
-        String[] annotationParams = findFeatureByDescription(description);
+        Object[] annotationParams = findFeatureByDescription(description);
 
         //Create feature and story annotations. Remove unnecessary words from it
-        Features feature = getFeaturesAnnotation(new String[]{annotationParams[0].split(":")[1].trim()});
-        String storyText = annotationParams[1];
-        if (annotationParams[1].split(":").length > 1) {
-            storyText = annotationParams[1].split(":")[1].trim();
+        Features feature = getFeaturesAnnotation(new String[]{((String) annotationParams[0]).split(":")[1].trim()});
+        String storyText = (String) annotationParams[1];
+        if (((String) annotationParams[1]).split(":").length > 1) {
+            storyText = ((String) annotationParams[1]).split(":")[1].trim();
         }
         Stories story = getStoriesAnnotation(new String[]{storyText});
 
@@ -239,7 +240,7 @@ public class AllureRunListener extends RunListener {
                 + " " + suiteName});
         }
 
-        String uid = generateSuiteUid(suiteName);
+        String uid = generateSuiteUid(description);
         TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, story.value()[0]);
 
         event.setTitle(story.value()[0]);
@@ -257,6 +258,7 @@ public class AllureRunListener extends RunListener {
         event.withLabels(AllureModelUtils.createTestFrameworkLabel("CucumberJVM"));
 
         getLifecycle().fire(event);
+        return uid;
     }
 
     /**
@@ -317,6 +319,8 @@ public class AllureRunListener extends RunListener {
             AnnotationManager am = new AnnotationManager(annotations);
             am.update(event);
             getLifecycle().fire(event);
+        } else {
+            System.out.println("");
         }
     }
 
@@ -352,29 +356,38 @@ public class AllureRunListener extends RunListener {
         getLifecycle().fire(new TestSuiteFinishedEvent(uid));
     }
 
-    public String generateSuiteUid(String suiteName) {
+    public String generateSuiteUid(Description description) throws IllegalAccessException {
         String uid = UUID.randomUUID().toString();
         synchronized (getSuites()) {
-            getSuites().put(suiteName, uid);
+            getSuites().put(FieldUtils.readField(description, "fUniqueId", true), uid);
         }
         return uid;
     }
 
     public String getSuiteUid(Description description) throws IllegalAccessException {
         String suiteName = description.getClassName();
+        Object story = findFeatureByDescription(description)[3];
         if (!description.isSuite()) {
             suiteName = extractClassName(description);
+            if (!getSuites().containsKey(FieldUtils.readField(story, "fUniqueId", true))) {
+                return testSuiteStarted(description, suiteName);
+            } else {
+                return getSuites().get(FieldUtils.readField(story, "fUniqueId", true));
+            }
+        } else {
+            for (Object suiteChild : description.getChildren()) {
+                if (getSuites().containsKey(FieldUtils.readField(story, "fUniqueId", true))) {
+                    return getSuites().get(FieldUtils.readField(story, "fUniqueId", true));
+                } else {
+                    return testSuiteStarted(description, suiteName);
+                }
+            }
         }
-        if (!getSuites().containsKey(suiteName)) {
-            //Fix NPE
-//            Description suiteDescription = Description.createSuiteDescription(suiteName, (Serializable) FieldUtils.readField(description, "fUniqueId", true));
-            testSuiteStarted(description, suiteName);
-        }
-        return getSuites().get(suiteName);
+        throw new NoSuchElementException("Could not get suite UUID");
+
     }
 
-    public String
-            getIgnoredMessage(Description description) {
+    public String getIgnoredMessage(Description description) {
         Ignore ignore = description.getAnnotation(Ignore.class
         );
         return ignore
@@ -418,7 +431,7 @@ public class AllureRunListener extends RunListener {
         this.lifecycle = lifecycle;
     }
 
-    public Map<String, String> getSuites() {
+    public Map<Object, String> getSuites() {
         return suites;
     }
 
