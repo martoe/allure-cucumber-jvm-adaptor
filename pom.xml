@@ -149,7 +149,7 @@
                     <properties>
                         <property>
                             <name>listener</name>
-                            <value>ru.yandex.qatools.allure.cucumberjvm.AllureRunListenerV2</value>
+                            <value>ru.yandex.qatools.allure.cucumberjvm.AllureRunListener</value>
                         </property>
                     </properties>
                 </configuration>
