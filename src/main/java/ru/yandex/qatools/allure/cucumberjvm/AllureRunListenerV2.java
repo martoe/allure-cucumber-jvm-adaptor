@@ -2,15 +2,6 @@ package ru.yandex.qatools.allure.cucumberjvm;
 
 import gherkin.formatter.model.Feature;
 import gherkin.formatter.model.ScenarioOutline;
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.junit.runner.Description;
-import org.junit.runner.notification.Failure;
-import org.junit.runner.notification.RunListener;
-import ru.yandex.qatools.allure.Allure;
-import ru.yandex.qatools.allure.events.TestCaseFinishedEvent;
-import ru.yandex.qatools.allure.events.TestCasePendingEvent;
-import ru.yandex.qatools.allure.events.TestCaseStartedEvent;
-import ru.yandex.qatools.allure.utils.AnnotationManager;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
@@ -21,15 +12,28 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.apache.commons.lang3.reflect.FieldUtils;
+
 import org.junit.Ignore;
 import org.junit.internal.AssumptionViolatedException;
+import org.junit.runner.Description;
+import org.junit.runner.notification.Failure;
+import org.junit.runner.notification.RunListener;
+
+
+import ru.yandex.qatools.allure.Allure;
 import ru.yandex.qatools.allure.annotations.Features;
 import ru.yandex.qatools.allure.annotations.Stories;
 import ru.yandex.qatools.allure.config.AllureModelUtils;
 import ru.yandex.qatools.allure.events.TestCaseCanceledEvent;
 import ru.yandex.qatools.allure.events.TestCaseFailureEvent;
+import ru.yandex.qatools.allure.events.TestCaseFinishedEvent;
+import ru.yandex.qatools.allure.events.TestCasePendingEvent;
+import ru.yandex.qatools.allure.events.TestCaseStartedEvent;
 import ru.yandex.qatools.allure.events.TestSuiteFinishedEvent;
 import ru.yandex.qatools.allure.events.TestSuiteStartedEvent;
+import ru.yandex.qatools.allure.utils.AnnotationManager;
 
 /**
  * @author Viktor Sidochenko viktor.sidochenko@gmail.com
@@ -55,13 +59,20 @@ public class AllureRunListenerV2 extends RunListener {
     }
 
     @Override
-    public void testStarted(Description description) throws IllegalAccessException {
+    public void testStarted(Description description) throws IllegalAccessException, Exception {
         Scenario scenario = findScenarioByDescription(description);
 
         if (description.isTest()) {
 
+            String suiteUuid = getSuiteUuid(scenario.getScenario().getObject());
+
+            if (suiteUuid == null) {
+                startScenario(scenario, description);
+                suiteUuid = getSuiteUuid(description);
+            }
+
             TestCaseStartedEvent event = new TestCaseStartedEvent(
-                    getSuites().get(getSuiteUuid(scenario.getScenario().getObject())),
+                    suiteUuid,
                     extractMethodName(description));
             event.setTitle(extractMethodName(description));
 
@@ -73,29 +84,10 @@ public class AllureRunListenerV2 extends RunListener {
             AnnotationManager am = new AnnotationManager(annotations);
             am.update(event);
             getLifecycle().fire(event);
-        } else {
-            Features featureAnnotation = getFeaturesAnnotation(
-                    new String[]{scenario.getFeature().getObject().getDisplayName()});
-            Stories storyAnnotation = getStoriesAnnotation(
-                    new String[]{scenario.getScenario().getObject().getDisplayName()});
-
-            String uuid = generateSuiteUid(description);
-            TestSuiteStartedEvent event = new TestSuiteStartedEvent(uuid, storyAnnotation.value()[0]);
-            event.setTitle(storyAnnotation.value()[0]);
-            //Add feature and story annotations
-            Collection<Annotation> annotations = new ArrayList<>();
-            for (Annotation annotation : description.getAnnotations()) {
-                annotations.add(annotation);
-            }
-            annotations.add(storyAnnotation);
-            annotations.add(featureAnnotation);
-            AnnotationManager am = new AnnotationManager(annotations);
-            am.update(event);
-
-            event.withLabels(AllureModelUtils.createTestFrameworkLabel("CucumberJVM"));
-
-            getLifecycle().fire(event);
         }
+//        else {
+//            startScenario(scenario, description);
+//        }
     }
 
     @Override
@@ -116,14 +108,14 @@ public class AllureRunListenerV2 extends RunListener {
     }
 
     @Override
-    public void testIgnored(Description description) throws IllegalAccessException {
+    public void testIgnored(Description description) throws IllegalAccessException, Exception {
         startFakeTestCase(description);
         getLifecycle().fire(new TestCasePendingEvent().withMessage(getIgnoredMessage(description)));
         finishFakeTestCase();
     }
 
     @Override
-    public void testFinished(Description description) throws IllegalAccessException {
+    public void testFinished(Description description) throws IllegalAccessException, Exception {
         if (description.isSuite()) {
             getLifecycle().fire(new TestSuiteFinishedEvent(getSuiteUuid(description)));
         } else {
@@ -196,7 +188,7 @@ public class AllureRunListenerV2 extends RunListener {
 
     }
 
-    private Scenario findScenarioByDescription(Description desc) throws IllegalAccessException {
+    private Scenario findScenarioByDescription(Description desc) throws IllegalAccessException, Exception {
         List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
         GherkinEntity feature = null;
         GherkinEntity scenario = null;
@@ -210,10 +202,11 @@ public class AllureRunListenerV2 extends RunListener {
                 if (scenarioCandidate != null) {
                     feature = new GherkinEntity(GherkinEntityType.FEATURE, featureCandidate);
                     scenario = scenarioCandidate;
+                    return new Scenario(feature, scenario);
                 }
             }
         }
-        return new Scenario(feature, scenario);
+        throw new Exception("Cannot find scenario by description");
     }
 
     private GherkinEntity findScenarioInFeature(Description feature, Description step) throws IllegalAccessException {
@@ -224,7 +217,7 @@ public class AllureRunListenerV2 extends RunListener {
             if (scenarioCandidate.equals(step)) {
                 scenario = scenarioCandidate;
                 gherkinEntityType = GherkinEntityType.SCENARIO;
-                break;
+                return new GherkinEntity(gherkinEntityType, scenario);
             }
             //Scenario
             if (scenarioInstance instanceof gherkin.formatter.model.Scenario) {
@@ -232,7 +225,7 @@ public class AllureRunListenerV2 extends RunListener {
                     if (child.equals(step)) {
                         scenario = scenarioCandidate;
                         gherkinEntityType = GherkinEntityType.SCENARIO;
-                        break;
+                        return new GherkinEntity(gherkinEntityType, scenario);
                     }
                 }
                 //Scenario Outline
@@ -241,17 +234,14 @@ public class AllureRunListenerV2 extends RunListener {
                 // we need to go deeper :
                 for (Description example : examples) {
                     if (example.equals(step) || example.getChildren().contains(step)) {
-                        scenario = scenarioCandidate;
+                        scenario = example;
                         gherkinEntityType = GherkinEntityType.SCENARIO_OUTLINE;
-                        break;
+                        return new GherkinEntity(gherkinEntityType, scenario);
                     }
                 }
             }
-            if (scenario != null) {
-                break;
-            }
         }
-        return new GherkinEntity(gherkinEntityType, scenario);
+        return null;
     }
 
     /**
@@ -279,8 +269,9 @@ public class AllureRunListenerV2 extends RunListener {
         return uuid;
     }
 
-    public String getSuiteUuid(Description description) throws IllegalAccessException {
-        Object fUniqueId = FieldUtils.readField(description, "fUniqueId", true);
+    public String getSuiteUuid(Description description) throws IllegalAccessException, Exception {
+        Scenario scenario = findScenarioByDescription(description);
+        Object fUniqueId = FieldUtils.readField(scenario.getScenario().getObject(), "fUniqueId", true);
         return getSuites().get(fUniqueId);
     }
 
@@ -347,7 +338,33 @@ public class AllureRunListenerV2 extends RunListener {
                 .isEmpty() ? "Test ignored (without reason)!" : ignore.value();
     }
 
-    public void startFakeTestCase(Description description) throws IllegalAccessException {
+    private void startScenario(Scenario scenario, Description description) throws IllegalAccessException, Exception {
+        scenario = findScenarioByDescription(description);
+        Features featureAnnotation = getFeaturesAnnotation(
+                new String[]{scenario.getFeature().getObject().getDisplayName()});
+        Stories storyAnnotation = getStoriesAnnotation(
+                new String[]{scenario.getScenario().getObject().getDisplayName()});
+
+        String uuid = generateSuiteUid(scenario.getScenario().getObject());
+        TestSuiteStartedEvent event = new TestSuiteStartedEvent(uuid, storyAnnotation.value()[0]);
+        event.setTitle(storyAnnotation.value()[0]);
+        //Add feature and story annotations
+        Collection<Annotation> annotations = new ArrayList<>();
+        for (Annotation annotation : description.getAnnotations()) {
+            annotations.add(annotation);
+        }
+        annotations.add(storyAnnotation);
+        annotations.add(featureAnnotation);
+        AnnotationManager am = new AnnotationManager(annotations);
+        am.update(event);
+
+        event.withLabels(AllureModelUtils.createTestFrameworkLabel("CucumberJVM"));
+
+        getLifecycle().fire(event);
+
+    }
+
+    private void startFakeTestCase(Description description) throws IllegalAccessException, Exception {
         String uuid = null;
         if (description.isTest()) {
             Scenario scenario = findScenarioByDescription(description);
