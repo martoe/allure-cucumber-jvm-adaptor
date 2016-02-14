@@ -21,7 +21,6 @@ import org.junit.runner.Description;
 import org.junit.runner.notification.Failure;
 import org.junit.runner.notification.RunListener;
 
-
 import ru.yandex.qatools.allure.Allure;
 import ru.yandex.qatools.allure.annotations.Features;
 import ru.yandex.qatools.allure.annotations.Stories;
@@ -85,9 +84,6 @@ public class AllureRunListenerV2 extends RunListener {
             am.update(event);
             getLifecycle().fire(event);
         }
-//        else {
-//            startScenario(scenario, description);
-//        }
     }
 
     @Override
@@ -342,8 +338,15 @@ public class AllureRunListenerV2 extends RunListener {
         scenario = findScenarioByDescription(description);
         Features featureAnnotation = getFeaturesAnnotation(
                 new String[]{scenario.getFeature().getObject().getDisplayName()});
+
+        String storyName = scenario.getScenario().getObject().getDisplayName();
+        if (scenario.getScenario().getType().equals(GherkinEntityType.SCENARIO_OUTLINE)) {
+            storyName = ((gherkin.formatter.model.Scenario) getDescriptionUniqueId(scenario.getScenario().getObject())).
+                    getName() + " : " + storyName;
+        }
+
         Stories storyAnnotation = getStoriesAnnotation(
-                new String[]{scenario.getScenario().getObject().getDisplayName()});
+                new String[]{storyName});
 
         String uuid = generateSuiteUid(scenario.getScenario().getObject());
         TestSuiteStartedEvent event = new TestSuiteStartedEvent(uuid, storyAnnotation.value()[0]);
@@ -365,21 +368,31 @@ public class AllureRunListenerV2 extends RunListener {
     }
 
     private void startFakeTestCase(Description description) throws IllegalAccessException, Exception {
-        String uuid = null;
+        Scenario scenario = findScenarioByDescription(description);
+
         if (description.isTest()) {
-            Scenario scenario = findScenarioByDescription(description);
-            uuid = getSuiteUuid(scenario.getScenario().getObject());
-        } else {
-            uuid = getSuiteUuid(description);
+
+            String suiteUuid = getSuiteUuid(scenario.getScenario().getObject());
+
+            if (suiteUuid == null) {
+                startScenario(scenario, description);
+                suiteUuid = getSuiteUuid(description);
+            }
+
+            TestCaseStartedEvent event = new TestCaseStartedEvent(
+                    suiteUuid,
+                    extractMethodName(description));
+            event.setTitle(extractMethodName(description));
+
+            Collection<Annotation> annotations = new ArrayList<>();
+            for (Annotation annotation : description.getAnnotations()) {
+                annotations.add(annotation);
+            }
+
+            AnnotationManager am = new AnnotationManager(annotations);
+            am.update(event);
+            getLifecycle().fire(event);
         }
-
-        String name = description.isTest() ? description.getMethodName() : description.getClassName();
-        TestCaseStartedEvent event = new TestCaseStartedEvent(uuid, name);
-        event.setTitle(name);
-        AnnotationManager am = new AnnotationManager(description.getAnnotations());
-        am.update(event);
-
-        getLifecycle().fire(event);
     }
 
     public void finishFakeTestCase() {
