@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.naming.ConfigurationException;
 
 import org.apache.commons.lang3.reflect.FieldUtils;
 
@@ -58,32 +59,8 @@ public class AllureRunListenerV2 extends RunListener {
     }
 
     @Override
-    public void testStarted(Description description) throws IllegalAccessException, Exception {
-        Scenario scenario = findScenarioByDescription(description);
-
-        if (description.isTest()) {
-
-            String suiteUuid = getSuiteUuid(scenario.getScenario().getObject());
-
-            if (suiteUuid == null) {
-                startScenario(scenario, description);
-                suiteUuid = getSuiteUuid(description);
-            }
-
-            TestCaseStartedEvent event = new TestCaseStartedEvent(
-                    suiteUuid,
-                    extractMethodName(description));
-            event.setTitle(extractMethodName(description));
-
-            Collection<Annotation> annotations = new ArrayList<>();
-            for (Annotation annotation : description.getAnnotations()) {
-                annotations.add(annotation);
-            }
-
-            AnnotationManager am = new AnnotationManager(annotations);
-            am.update(event);
-            getLifecycle().fire(event);
-        }
+    public void testStarted(Description description) throws IllegalAccessException, ConfigurationException {
+        startTestCase(description);
     }
 
     @Override
@@ -104,14 +81,14 @@ public class AllureRunListenerV2 extends RunListener {
     }
 
     @Override
-    public void testIgnored(Description description) throws IllegalAccessException, Exception {
-        startFakeTestCase(description);
+    public void testIgnored(Description description) throws IllegalAccessException, ConfigurationException {
+        startTestCase(description);
         getLifecycle().fire(new TestCasePendingEvent().withMessage(getIgnoredMessage(description)));
         finishFakeTestCase();
     }
 
     @Override
-    public void testFinished(Description description) throws IllegalAccessException, Exception {
+    public void testFinished(Description description) throws IllegalAccessException, ConfigurationException {
         if (description.isSuite()) {
             getLifecycle().fire(new TestSuiteFinishedEvent(getSuiteUuid(description)));
         } else {
@@ -184,7 +161,7 @@ public class AllureRunListenerV2 extends RunListener {
 
     }
 
-    private Scenario findScenarioByDescription(Description desc) throws IllegalAccessException, Exception {
+    private Scenario findScenarioByDescription(Description desc) throws IllegalAccessException, ConfigurationException {
         List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
         GherkinEntity feature = null;
         GherkinEntity scenario = null;
@@ -202,7 +179,10 @@ public class AllureRunListenerV2 extends RunListener {
                 }
             }
         }
-        throw new Exception("Cannot find scenario by description");
+        throw new ConfigurationException("Cannot find scenario by description. "
+                + "Looks like pom.xml missconfigured. See "
+                + "https://github.com/allure-framework/allure-cucumber-jvm-adaptor/wiki/Configure-pom.xml "
+                + "for details.");
     }
 
     private GherkinEntity findScenarioInFeature(Description feature, Description step) throws IllegalAccessException {
@@ -265,7 +245,7 @@ public class AllureRunListenerV2 extends RunListener {
         return uuid;
     }
 
-    public String getSuiteUuid(Description description) throws IllegalAccessException, Exception {
+    public String getSuiteUuid(Description description) throws IllegalAccessException, ConfigurationException {
         Scenario scenario = findScenarioByDescription(description);
         Object fUniqueId = FieldUtils.readField(scenario.getScenario().getObject(), "fUniqueId", true);
         return getSuites().get(fUniqueId);
@@ -334,7 +314,7 @@ public class AllureRunListenerV2 extends RunListener {
                 .isEmpty() ? "Test ignored (without reason)!" : ignore.value();
     }
 
-    private void startScenario(Scenario scenario, Description description) throws IllegalAccessException, Exception {
+    private void startScenario(Scenario scenario, Description description) throws IllegalAccessException, ConfigurationException {
         scenario = findScenarioByDescription(description);
         Features featureAnnotation = getFeaturesAnnotation(
                 new String[]{scenario.getFeature().getObject().getDisplayName()});
@@ -367,7 +347,7 @@ public class AllureRunListenerV2 extends RunListener {
 
     }
 
-    private void startFakeTestCase(Description description) throws IllegalAccessException, Exception {
+    private void startTestCase(Description description) throws IllegalAccessException, ConfigurationException {
         Scenario scenario = findScenarioByDescription(description);
 
         if (description.isTest()) {
