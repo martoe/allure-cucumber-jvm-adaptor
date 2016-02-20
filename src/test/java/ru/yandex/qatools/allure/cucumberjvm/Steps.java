@@ -3,7 +3,6 @@ package ru.yandex.qatools.allure.cucumberjvm;
 import org.junit.Assert;
 
 import ru.yandex.qatools.allure.annotations.Attachment;
-import cucumber.api.PendingException;
 import cucumber.api.java.en.Given;
 import cucumber.api.java.en.Then;
 import cucumber.api.java.en.When;
@@ -11,16 +10,24 @@ import cucumber.api.java.ru.Дано;
 import cucumber.api.java.ru.Когда;
 import cucumber.api.java.ru.То;
 import cucumber.api.java.ru.Тогда;
+import java.awt.AWTException;
+import java.awt.Rectangle;
+import java.awt.Robot;
+import java.awt.Toolkit;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import javax.imageio.ImageIO;
 
 /**
  * @author Viktor Sidochenko viktor.sidochenko@gmail.com
  */
 public class Steps {
 
-	String URL_First;
-	String URL_Second;
-	String URL_concat;
-	
+    String URL_First;
+    String URL_Second;
+    String URL_concat;
+
     int a;
     int b;
     int c;
@@ -28,31 +35,37 @@ public class Steps {
 
     @Дано("^первое число (\\d+)$")
     public void первое_число(int digit) throws Throwable {
+        getScreenshot();
         a = digit;
     }
 
     @Дано("^второе число (\\d+)$")
     public void второе_число(int digit) throws Throwable {
+        getScreenshot();
         b = digit;
     }
 
     @Дано("^третье число (\\d+)$")
     public void третье_число(int digit) throws Throwable {
+        getScreenshot();
         c = digit;
     }
 
     @Когда("^я их складываю$")
     public void я_их_складываю() throws Throwable {
+        getScreenshot();
         sum = a + b + c;
     }
 
     @Тогда("^сумма равна (\\d+)$")
     public void сумма_равна(int result) throws Throwable {
+        getScreenshot();
         Assert.assertEquals(result, sum);
     }
 
     @Дано("^сломанный сценарий$")
     public void сломанный_сценарий() throws Throwable {
+        getScreenshot();
         try {
             Object o = 1;
             String fail = (String) o;
@@ -64,53 +77,70 @@ public class Steps {
 
     @Когда("^отображается отчет$")
     public void отображается_отчет() throws Throwable {
+        getScreenshot();
 
     }
 
     @То("^видно исключение$")
     public void видно_исключение() throws Throwable {
+        getScreenshot();
 
     }
-    
+
     @Given("^Anything in given with (.+)$")
     public void anything_in_given_with_dots_This_is_an_example(String text) throws Throwable {
-    	
+        getScreenshot();
     }
 
     @When("^whe run the scenario$")
     public void whe_run_the_scenario() throws Throwable {
-        
+        getScreenshot();
     }
 
     @Then("^scenario name shuld be complete$")
     public void scenario_name_shuld_be_complete() throws Throwable {
-        
+        getScreenshot();
     }
 
     @Given("^An URL (.+)$")
     public void an_URL(String URL) throws Throwable {
-    	this.URL_First = URL;
+        getScreenshot();
+        this.URL_First = URL;
     }
 
     @Given("^another URL (.+)$")
     public void another_URL(String URL) throws Throwable {
-    	this.URL_Second = URL;
+        getScreenshot();
+        this.URL_Second = URL;
     }
 
     @When("^whe concatenate it$")
     public void whe_concatenate_it() throws Throwable {
-    	this.URL_concat = this.URL_First + this.URL_Second;
+        getScreenshot();
+        this.URL_concat = this.URL_First + this.URL_Second;
     }
 
     @Then("^Result should be (.+)$")
     public void result_should_be(String expected) throws Throwable {
+        getScreenshot();
         Assert.assertEquals(expected, URL_concat);
     }
-    
 
-   @Attachment
+    @Attachment
     public String makeAttach(String text) {
         return text;
+    }
+
+    @Attachment(type = "image/png")
+    public byte[] getScreenshot() throws AWTException, IOException {
+        BufferedImage image = new Robot().createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpg", baos);
+        baos.flush();
+        byte[] imageInByte = baos.toByteArray();
+        baos.close();
+        return imageInByte;
     }
 
 }
